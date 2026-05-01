@@ -1,5 +1,6 @@
 import os
 import logging
+import sqlite3
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
@@ -11,25 +12,65 @@ from openai import OpenAI
 TOKEN = os.getenv("TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-if not TOKEN:
-    raise ValueError("❌ TOKEN missing")
-
-if not OPENAI_API_KEY:
-    raise ValueError("❌ OPENAI_API_KEY missing")
-
 client = OpenAI(api_key=OPENAI_API_KEY)
 logging.basicConfig(level=logging.INFO)
 
+# ========= DATABASE =========
+conn = sqlite3.connect("data.db", check_same_thread=False)
+cursor = conn.cursor()
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT,
+    topic TEXT,
+    level TEXT,
+    field TEXT
+)
+""")
+conn.commit()
+
 # ========= STATES =========
-LANG, WORK, INPUT = range(3)
+LANG, LEVEL, FIELD, TOPIC = range(4)
+
+# ========= TEXT =========
+def t(lang, key):
+    texts = {
+        "ar": {
+            "start": "🎓 مرحباً بك في أكاديمية الباحث\n\nهذا البوت يساعدك في:\n- إعداد خطة بحث\n- تحليل موضوع\n\nاضغط للبدء:",
+            "choose_lang": "🌍 اختر اللغة:",
+            "choose_level": "🎓 اختر المستوى:",
+            "choose_field": "📚 اختر التخصص:",
+            "enter_topic": "✍️ اكتب موضوعك:",
+            "processing": "⏳ جاري إعداد محتوى أكاديمي احترافي...",
+            "back": "⬅️ رجوع",
+            "main": "🏠 الرئيسية"
+        },
+        "en": {
+            "start": "🎓 Research Assistant Bot\n\nHelps you with:\n- Research plans\n- Analysis\n\nStart below:",
+            "choose_lang": "Choose language:",
+            "choose_level": "Choose level:",
+            "choose_field": "Choose field:",
+            "enter_topic": "Enter topic:",
+            "processing": "Processing...",
+            "back": "Back",
+            "main": "Main"
+        }
+    }
+    return texts.get(lang, texts["ar"])[key]
 
 # ========= START =========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["lang"] = "ar"  # افتراضي عربي
+
     kb = [[
         InlineKeyboardButton("🇱🇾 العربية", callback_data="ar"),
         InlineKeyboardButton("🇬🇧 English", callback_data="en")
     ]]
-    await update.message.reply_text("🌍 اختر اللغة:", reply_markup=InlineKeyboardMarkup(kb))
+
+    await update.message.reply_text(
+        t("ar", "start"),
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
     return LANG
 
 # ========= LANGUAGE =========
@@ -38,43 +79,103 @@ async def set_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
 
     context.user_data["lang"] = q.data
+    lang = q.data
 
-    kb = [[
-        InlineKeyboardButton("خطة بحث", callback_data="plan"),
-        InlineKeyboardButton("تحليل", callback_data="analysis")
-    ]]
+    kb = [
+        [InlineKeyboardButton("بكالوريوس", callback_data="bachelor")],
+        [InlineKeyboardButton("ماجستير", callback_data="master")],
+        [InlineKeyboardButton("دكتوراه", callback_data="phd")]
+    ]
 
-    await q.edit_message_text("اختر نوع العمل:", reply_markup=InlineKeyboardMarkup(kb))
-    return WORK
+    await q.edit_message_text(
+        t(lang, "choose_level"),
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
+    return LEVEL
 
-# ========= WORK =========
-async def set_work(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ========= LEVEL =========
+async def set_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
-    context.user_data["work"] = q.data
+    context.user_data["level"] = q.data
+    lang = context.user_data["lang"]
 
-    await q.edit_message_text("✍️ اكتب موضوعك:")
-    return INPUT
+    kb = [
+        [InlineKeyboardButton("تقنية معلومات", callback_data="IT")],
+        [InlineKeyboardButton("هندسة", callback_data="Engineering")],
+        [InlineKeyboardButton("علوم اجتماعية", callback_data="Social")],
+        [InlineKeyboardButton("علوم إنسانية", callback_data="Humanities")],
+    ]
 
-# ========= INPUT =========
-async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await q.edit_message_text(
+        t(lang, "choose_field"),
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
+    return FIELD
+
+# ========= FIELD =========
+async def set_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+
+    context.user_data["field"] = q.data
+    lang = context.user_data["lang"]
+
+    await q.edit_message_text(t(lang, "enter_topic"))
+    return TOPIC
+
+# ========= TOPIC =========
+async def handle_topic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     topic = update.message.text
+    lang = context.user_data["lang"]
+    level = context.user_data["level"]
+    field = context.user_data["field"]
 
-    await update.message.reply_text("⚡ جاري التحليل...")
+    # حفظ في قاعدة البيانات
+    cursor.execute(
+        "INSERT INTO requests (user_id, topic, level, field) VALUES (?, ?, ?, ?)",
+        (str(update.effective_user.id), topic, level, field)
+    )
+    conn.commit()
+
+    await update.message.reply_text(t(lang, "processing"))
+
+    prompt = f"""
+    اكتب محتوى أكاديمي احترافي حول الموضوع التالي:
+    الموضوع: {topic}
+    المستوى: {level}
+    التخصص: {field}
+
+    يجب أن يحتوي:
+    - مقدمة
+    - مشكلة البحث
+    - أسئلة البحث
+    - المنهجية
+    - خاتمة
+    """
 
     try:
         res = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": topic}],
-            max_tokens=300
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=800
         )
         reply = res.choices[0].message.content
     except Exception as e:
         reply = f"Error: {e}"
 
-    await update.message.reply_text(reply)
-    return INPUT
+    kb = [[InlineKeyboardButton("🏠 الرئيسية", callback_data="restart")]]
+
+    await update.message.reply_text(reply, reply_markup=InlineKeyboardMarkup(kb))
+
+    return ConversationHandler.END
+
+# ========= RESTART =========
+async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    return await start(q, context)
 
 # ========= MAIN =========
 def main():
@@ -84,10 +185,11 @@ def main():
         entry_points=[CommandHandler("start", start)],
         states={
             LANG: [CallbackQueryHandler(set_lang)],
-            WORK: [CallbackQueryHandler(set_work)],
-            INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_input)],
+            LEVEL: [CallbackQueryHandler(set_level)],
+            FIELD: [CallbackQueryHandler(set_field)],
+            TOPIC: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_topic)],
         },
-        fallbacks=[]
+        fallbacks=[CallbackQueryHandler(restart, pattern="restart")]
     )
 
     app.add_handler(conv)
