@@ -8,10 +8,11 @@ from telegram.ext import (
 )
 from openai import OpenAI
 
-# FILES
+# PDF & DOC
 from docx import Document
-from reportlab.platypus import SimpleDocTemplate, Paragraph
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.enums import TA_RIGHT
 
 # ========= CONFIG =========
 TOKEN = os.getenv("TOKEN")
@@ -40,98 +41,113 @@ CREATE TABLE IF NOT EXISTS requests (
     field TEXT
 )
 """)
-
 conn.commit()
+
+FREE_LIMIT = 5
 
 # ========= STATES =========
 LANG, LEVEL, FIELD, TOPIC, FORMAT = range(5)
 
-# ========= LIMIT =========
-FREE_LIMIT = 5
+# ========= HELPERS =========
+def get_lang(ctx):
+    return ctx.user_data.get("lang", "ar")
 
 def check_limit(user_id):
     cursor.execute("SELECT requests FROM users WHERE user_id=?", (user_id,))
     row = cursor.fetchone()
-
     if not row:
-        cursor.execute("INSERT INTO users(user_id, requests) VALUES (?, 0)", (user_id,))
+        cursor.execute("INSERT INTO users VALUES (?,0)", (user_id,))
         conn.commit()
         return True
-
     return row[0] < FREE_LIMIT
 
 def increase_usage(user_id):
-    cursor.execute("UPDATE users SET requests = requests + 1 WHERE user_id=?", (user_id,))
+    cursor.execute("UPDATE users SET requests=requests+1 WHERE user_id=?", (user_id,))
     conn.commit()
+
+# ========= FILE GENERATION =========
+def create_pdf(text, filename):
+    doc = SimpleDocTemplate(filename)
+    style = ParagraphStyle(name="Arabic", alignment=TA_RIGHT, fontSize=12, leading=18)
+    story = []
+    for line in text.split("\n"):
+        story.append(Paragraph(line, style))
+        story.append(Spacer(1, 10))
+    doc.build(story)
+
+def create_doc(text, filename):
+    doc = Document()
+    doc.add_heading("بحث أكاديمي", 0)
+    for line in text.split("\n"):
+        doc.add_paragraph(line)
+    doc.save(filename)
 
 # ========= START =========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
+    context.user_data["lang"] = "ar"
 
     kb = [[
-        InlineKeyboardButton("🇱🇾 العربية", callback_data="ar"),
-        InlineKeyboardButton("🇬🇧 English", callback_data="en")
+        InlineKeyboardButton("🇱🇾 العربية", callback_data="lang_ar"),
+        InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")
     ]]
 
     await update.message.reply_text(
         "🎓 أكاديمية الباحث\n\n"
-        "💡 هذا البوت يساعدك في إعداد بحوث أكاديمية احترافية.\n"
-        "📄 يمكنك تحميل النتائج PDF أو Word.\n\n"
-        "اختر اللغة:",
+        "يساعدك هذا البوت في إعداد بحوث أكاديمية احترافية\n"
+        "📄 يمكنك تحميل النتائج PDF أو Word\n\nاختر اللغة:",
         reply_markup=InlineKeyboardMarkup(kb)
     )
     return LANG
 
 # ========= LANGUAGE =========
-async def set_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def set_lang(update, context):
     q = update.callback_query
     await q.answer()
 
-    context.user_data["lang"] = q.data
+    lang = q.data.split("_")[1]
+    context.user_data["lang"] = lang
 
-    kb = [
-        [InlineKeyboardButton("بكالوريوس", callback_data="bachelor")],
-        [InlineKeyboardButton("ماجستير", callback_data="master")],
-        [InlineKeyboardButton("دكتوراه", callback_data="phd")],
-        [InlineKeyboardButton("❌ خروج", callback_data="exit")]
-    ]
+    levels = ["دبلوم عالي","ليسانس","بكالوريوس","ماجستير","دكتوراه"]
+
+    kb = [[InlineKeyboardButton(l, callback_data=f"level_{l}")] for l in levels]
+    kb.append([InlineKeyboardButton("❌ خروج", callback_data="exit")])
 
     await q.edit_message_text("🎓 اختر المستوى:", reply_markup=InlineKeyboardMarkup(kb))
     return LEVEL
 
 # ========= LEVEL =========
-async def set_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def set_level(update, context):
     q = update.callback_query
     await q.answer()
 
-    context.user_data["level"] = q.data
+    context.user_data["level"] = q.data.replace("level_","")
 
-    kb = [
-        [InlineKeyboardButton("تقنية معلومات", callback_data="IT")],
-        [InlineKeyboardButton("هندسة", callback_data="ENG")],
-        [InlineKeyboardButton("طب", callback_data="MED")],
-        [InlineKeyboardButton("❌ خروج", callback_data="exit")]
-    ]
+    fields = ["تقنية معلومات","هندسة","طب","اقتصاد","قانون","إدارة"]
+
+    kb = [[InlineKeyboardButton(f, callback_data=f"field_{f}")] for f in fields]
+    kb.append([InlineKeyboardButton("⬅️ رجوع", callback_data="back")])
+    kb.append([InlineKeyboardButton("❌ خروج", callback_data="exit")])
 
     await q.edit_message_text("📚 اختر التخصص:", reply_markup=InlineKeyboardMarkup(kb))
     return FIELD
 
 # ========= FIELD =========
-async def set_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def set_field(update, context):
     q = update.callback_query
     await q.answer()
 
-    context.user_data["field"] = q.data
+    context.user_data["field"] = q.data.replace("field_","")
 
     await q.edit_message_text("✍️ اكتب موضوعك:")
     return TOPIC
 
 # ========= TOPIC =========
-async def topic(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def topic(update, context):
     user_id = str(update.effective_user.id)
 
     if not check_limit(user_id):
-        await update.message.reply_text("❌ انتهت المحاولات المجانية اليوم")
+        await update.message.reply_text("❌ انتهت المحاولات المجانية")
         return ConversationHandler.END
 
     context.user_data["topic"] = update.message.text
@@ -142,58 +158,56 @@ async def topic(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("❌ خروج", callback_data="exit")]
     ]
 
-    await update.message.reply_text("📁 اختر نوع الملف:")
-    await update.message.reply_text("اختر:", reply_markup=InlineKeyboardMarkup(kb))
-
+    await update.message.reply_text("📁 اختر نوع الملف:", reply_markup=InlineKeyboardMarkup(kb))
     return FORMAT
 
 # ========= GENERATE =========
-async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def generate(update, context):
     q = update.callback_query
     await q.answer()
 
-    format_type = q.data
-    topic = context.user_data["topic"]
+    await q.edit_message_text("⏳ جاري التحليل...")
 
-    await q.edit_message_text("⏳ جاري إنشاء الملف...")
+    prompt = f"""
+اكتب محتوى أكاديمي احترافي:
+الموضوع: {context.user_data['topic']}
+المستوى: {context.user_data['level']}
+التخصص: {context.user_data['field']}
+
+يشمل:
+مقدمة، مشكلة، أسئلة، منهجية، خاتمة
+"""
 
     res = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[{"role": "user", "content": topic}],
-        max_tokens=800
+        messages=[{"role":"user","content":prompt}],
+        max_tokens=900
     )
 
     text = res.choices[0].message.content
 
-    file_path = f"{topic}.pdf" if format_type == "pdf" else f"{topic}.docx"
+    filename = "output.pdf" if q.data=="pdf" else "output.docx"
 
-    # ========= PDF =========
-    if format_type == "pdf":
-        doc = SimpleDocTemplate(file_path)
-        styles = getSampleStyleSheet()
-        story = [Paragraph(text, styles["Normal"])]
-        doc.build(story)
-
-    # ========= DOC =========
+    if q.data=="pdf":
+        create_pdf(text, filename)
     else:
-        document = Document()
-        document.add_heading(topic, 0)
-        document.add_paragraph(text)
-        document.save(file_path)
+        create_doc(text, filename)
 
     increase_usage(str(update.effective_user.id))
 
-    await q.message.reply_document(open(file_path, "rb"))
+    await q.message.reply_document(open(filename,"rb"))
 
     return ConversationHandler.END
 
-# ========= EXIT =========
-async def exit_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ========= NAV =========
+async def exit_bot(update, context):
     q = update.callback_query
     await q.answer()
-
-    await q.edit_message_text("👋 تم الخروج\nيمكنك العودة لاحقًا")
+    await q.edit_message_text("👋 تم الخروج")
     return ConversationHandler.END
+
+async def back(update, context):
+    return await start(update, context)
 
 # ========= MAIN =========
 def main():
@@ -209,6 +223,7 @@ def main():
             ],
             FIELD: [
                 CallbackQueryHandler(set_field),
+                CallbackQueryHandler(back, pattern="back"),
                 CallbackQueryHandler(exit_bot, pattern="exit")
             ],
             TOPIC: [MessageHandler(filters.TEXT & ~filters.COMMAND, topic)],
@@ -221,8 +236,6 @@ def main():
     )
 
     app.add_handler(conv)
-
-    print("🚀 BOT RUNNING...")
     app.run_polling(close_loop=False)
 
 if __name__ == "__main__":
