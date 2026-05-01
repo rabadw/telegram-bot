@@ -12,6 +12,9 @@ from openai import OpenAI
 TOKEN = os.getenv("TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+if not TOKEN or not OPENAI_API_KEY:
+    raise ValueError("❌ تأكد من TOKEN و OPENAI_API_KEY")
+
 client = OpenAI(api_key=OPENAI_API_KEY)
 logging.basicConfig(level=logging.INFO)
 
@@ -33,42 +36,83 @@ conn.commit()
 LANG, LEVEL, FIELD, TOPIC = range(4)
 
 # ========= TEXT =========
-def t(lang, key):
-    texts = {
-        "ar": {
-            "start": "🎓 مرحباً بك في أكاديمية الباحث\n\nهذا البوت يساعدك في:\n- إعداد خطة بحث\n- تحليل موضوع\n\nاضغط للبدء:",
-            "choose_lang": "🌍 اختر اللغة:",
-            "choose_level": "🎓 اختر المستوى:",
-            "choose_field": "📚 اختر التخصص:",
-            "enter_topic": "✍️ اكتب موضوعك:",
-            "processing": "⏳ جاري إعداد محتوى أكاديمي احترافي...",
-            "back": "⬅️ رجوع",
-            "main": "🏠 الرئيسية"
-        },
-        "en": {
-            "start": "🎓 Research Assistant Bot\n\nHelps you with:\n- Research plans\n- Analysis\n\nStart below:",
-            "choose_lang": "Choose language:",
-            "choose_level": "Choose level:",
-            "choose_field": "Choose field:",
-            "enter_topic": "Enter topic:",
-            "processing": "Processing...",
-            "back": "Back",
-            "main": "Main"
-        }
+TEXT = {
+    "ar": {
+        "start": "🎓 أكاديمية الباحث الليبي\n\n"
+                 "هذا البوت يساعدك في إعداد:\n"
+                 "- خطط بحث\n- تحليل أكاديمي\n\nاضغط لاختيار اللغة:",
+        "level": "🎓 اختر مستواك الدراسي:",
+        "field": "📚 اختر تخصصك:",
+        "topic": "✍️ اكتب موضوعك:",
+        "processing": "⏳ جاري إعداد محتوى أكاديمي احترافي...",
+        "main": "🏠 الرئيسية",
+        "back": "🔙 رجوع"
+    },
+    "en": {
+        "start": "🎓 Research Assistant Bot\n\nChoose language:",
+        "level": "Choose level:",
+        "field": "Choose field:",
+        "topic": "Enter topic:",
+        "processing": "Processing...",
+        "main": "Main",
+        "back": "Back"
     }
-    return texts.get(lang, texts["ar"])[key]
+}
+
+# ========= DATA =========
+LEVELS = {
+    "ar": ["دبلوم عالي", "ليسانس", "بكالوريوس", "ماجستير", "دكتوراه"],
+    "en": ["Diploma", "License", "Bachelor", "Master", "PhD"]
+}
+
+FIELDS = {
+    "ar": [
+        "تقنية معلومات",
+        "هندسة",
+        "طب",
+        "علوم اقتصادية",
+        "علوم اجتماعية",
+        "علوم إنسانية",
+        "إدارة أعمال",
+        "قانون"
+    ],
+    "en": [
+        "IT",
+        "Engineering",
+        "Medicine",
+        "Economics",
+        "Social Sciences",
+        "Humanities",
+        "Business",
+        "Law"
+    ]
+}
+
+# ========= HELPERS =========
+def get_lang(context):
+    return context.user_data.get("lang", "ar")
+
+def nav_buttons(lang):
+    return [[InlineKeyboardButton(TEXT[lang]["main"], callback_data="main")]]
+
+def back_main(lang):
+    return [
+        [InlineKeyboardButton(TEXT[lang]["back"], callback_data="back")],
+        [InlineKeyboardButton(TEXT[lang]["main"], callback_data="main")]
+    ]
 
 # ========= START =========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["lang"] = "ar"  # افتراضي عربي
+    context.user_data.clear()
+    context.user_data["lang"] = "ar"
 
     kb = [[
-        InlineKeyboardButton("🇱🇾 العربية", callback_data="ar"),
-        InlineKeyboardButton("🇬🇧 English", callback_data="en")
+        InlineKeyboardButton("🇱🇾 العربية", callback_data="lang_ar"),
+        InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")
     ]]
 
     await update.message.reply_text(
-        t("ar", "start"),
+        TEXT["ar"]["start"],
         reply_markup=InlineKeyboardMarkup(kb)
     )
     return LANG
@@ -78,17 +122,14 @@ async def set_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
-    context.user_data["lang"] = q.data
-    lang = q.data
+    lang = q.data.split("_")[1]
+    context.user_data["lang"] = lang
 
-    kb = [
-        [InlineKeyboardButton("بكالوريوس", callback_data="bachelor")],
-        [InlineKeyboardButton("ماجستير", callback_data="master")],
-        [InlineKeyboardButton("دكتوراه", callback_data="phd")]
-    ]
+    kb = [[InlineKeyboardButton(l, callback_data=f"level_{l}")]
+          for l in LEVELS[lang]] + nav_buttons(lang)
 
     await q.edit_message_text(
-        t(lang, "choose_level"),
+        TEXT[lang]["level"],
         reply_markup=InlineKeyboardMarkup(kb)
     )
     return LEVEL
@@ -98,18 +139,14 @@ async def set_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
-    context.user_data["level"] = q.data
-    lang = context.user_data["lang"]
+    context.user_data["level"] = q.data.replace("level_", "")
+    lang = get_lang(context)
 
-    kb = [
-        [InlineKeyboardButton("تقنية معلومات", callback_data="IT")],
-        [InlineKeyboardButton("هندسة", callback_data="Engineering")],
-        [InlineKeyboardButton("علوم اجتماعية", callback_data="Social")],
-        [InlineKeyboardButton("علوم إنسانية", callback_data="Humanities")],
-    ]
+    kb = [[InlineKeyboardButton(f, callback_data=f"field_{f}")]
+          for f in FIELDS[lang]] + back_main(lang)
 
     await q.edit_message_text(
-        t(lang, "choose_field"),
+        TEXT[lang]["field"],
         reply_markup=InlineKeyboardMarkup(kb)
     )
     return FIELD
@@ -119,63 +156,94 @@ async def set_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
 
-    context.user_data["field"] = q.data
-    lang = context.user_data["lang"]
+    context.user_data["field"] = q.data.replace("field_", "")
+    lang = get_lang(context)
 
-    await q.edit_message_text(t(lang, "enter_topic"))
+    kb = back_main(lang)
+
+    await q.edit_message_text(
+        TEXT[lang]["topic"],
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
     return TOPIC
 
 # ========= TOPIC =========
 async def handle_topic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     topic = update.message.text
-    lang = context.user_data["lang"]
-    level = context.user_data["level"]
-    field = context.user_data["field"]
+    lang = get_lang(context)
 
-    # حفظ في قاعدة البيانات
+    # حفظ
     cursor.execute(
         "INSERT INTO requests (user_id, topic, level, field) VALUES (?, ?, ?, ?)",
-        (str(update.effective_user.id), topic, level, field)
+        (str(update.effective_user.id),
+         topic,
+         context.user_data["level"],
+         context.user_data["field"])
     )
     conn.commit()
 
-    await update.message.reply_text(t(lang, "processing"))
+    await update.message.reply_text(TEXT[lang]["processing"])
 
     prompt = f"""
-    اكتب محتوى أكاديمي احترافي حول الموضوع التالي:
-    الموضوع: {topic}
-    المستوى: {level}
-    التخصص: {field}
+اكتب بحث أكاديمي احترافي حول:
+الموضوع: {topic}
+المستوى: {context.user_data['level']}
+التخصص: {context.user_data['field']}
 
-    يجب أن يحتوي:
-    - مقدمة
-    - مشكلة البحث
-    - أسئلة البحث
-    - المنهجية
-    - خاتمة
-    """
+يتضمن:
+- مقدمة قوية
+- مشكلة البحث
+- أسئلة البحث
+- أهمية البحث
+- المنهجية
+- خاتمة علمية
+"""
 
     try:
         res = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=800
+            max_tokens=1000
         )
         reply = res.choices[0].message.content
     except Exception as e:
-        reply = f"Error: {e}"
+        reply = f"❌ خطأ: {e}"
 
-    kb = [[InlineKeyboardButton("🏠 الرئيسية", callback_data="restart")]]
+    kb = [
+        [InlineKeyboardButton("🔁 إعادة", callback_data="repeat")],
+        [InlineKeyboardButton(TEXT[lang]["main"], callback_data="main")]
+    ]
 
     await update.message.reply_text(reply, reply_markup=InlineKeyboardMarkup(kb))
+    return TOPIC
 
-    return ConversationHandler.END
+# ========= NAVIGATION =========
+async def go_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.callback_query:
+        await update.callback_query.answer()
+    return await start(update, context)
 
-# ========= RESTART =========
-async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def go_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    return await start(q, context)
+    lang = get_lang(context)
+
+    kb = [[InlineKeyboardButton(l, callback_data=f"level_{l}")]
+          for l in LEVELS[lang]] + nav_buttons(lang)
+
+    await q.edit_message_text(
+        TEXT[lang]["level"],
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
+    return LEVEL
+
+async def repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    lang = get_lang(context)
+
+    await q.message.reply_text(TEXT[lang]["topic"])
+    return TOPIC
 
 # ========= MAIN =========
 def main():
@@ -185,11 +253,23 @@ def main():
         entry_points=[CommandHandler("start", start)],
         states={
             LANG: [CallbackQueryHandler(set_lang)],
-            LEVEL: [CallbackQueryHandler(set_level)],
-            FIELD: [CallbackQueryHandler(set_field)],
-            TOPIC: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_topic)],
+            LEVEL: [
+                CallbackQueryHandler(set_level, pattern="^level_"),
+                CallbackQueryHandler(go_main, pattern="^main$")
+            ],
+            FIELD: [
+                CallbackQueryHandler(set_field, pattern="^field_"),
+                CallbackQueryHandler(go_back, pattern="^back$"),
+                CallbackQueryHandler(go_main, pattern="^main$")
+            ],
+            TOPIC: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_topic),
+                CallbackQueryHandler(go_back, pattern="^back$"),
+                CallbackQueryHandler(go_main, pattern="^main$"),
+                CallbackQueryHandler(repeat, pattern="^repeat$")
+            ],
         },
-        fallbacks=[CallbackQueryHandler(restart, pattern="restart")]
+        fallbacks=[CommandHandler("start", start)]
     )
 
     app.add_handler(conv)
