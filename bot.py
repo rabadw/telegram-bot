@@ -393,12 +393,12 @@ async def new_req(update, context):
 
 # ========= MAIN =========def main():
     def main():
-        app = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().token(TOKEN).build()
 
     # التشغيل التلقائي
-    app.add_handler(MessageHandler(filters.ALL, auto_start), group=0)
+   app.add_handler(MessageHandler(filters.ALL, auto_start), group=0)
 
-        conv = ConversationHandler(
+    conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
             LANG: [
