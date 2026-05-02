@@ -391,42 +391,56 @@ async def extra_chat(update, context):
 async def new_req(update, context):
     return await start(update, context)
 
-# ========= MAIN =========
-def main():
+# ========= MAIN =========def main():
     app = ApplicationBuilder().token(TOKEN).build()
-from telegram.ext import MessageHandler, filters
-app.add_handler(MessageHandler(filters.ALL, auto_start), group=0)
+
+    # handler التشغيل التلقائي
+    app.add_handler(MessageHandler(filters.ALL, auto_start), group=0)
 
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            LANG: [CallbackQueryHandler(set_lang),
-                   CallbackQueryHandler(go_main, pattern="main"),
-                   CallbackQueryHandler(exit_bot, pattern="exit")],
-            MODE: [CallbackQueryHandler(set_mode, pattern="^(research|analysis|presentation)$"),
-                   CallbackQueryHandler(go_main, pattern="main"),
-                   CallbackQueryHandler(go_back, pattern="back"),
-                   CallbackQueryHandler(exit_bot, pattern="exit")],
-            LEVEL: [CallbackQueryHandler(set_level, pattern="^level_"),
-                    CallbackQueryHandler(go_main, pattern="main"),
-                    CallbackQueryHandler(go_back, pattern="back"),
-                    CallbackQueryHandler(exit_bot, pattern="exit")],
-            FIELD: [CallbackQueryHandler(set_field, pattern="^field_"),
-                    CallbackQueryHandler(go_main, pattern="main"),
-                    CallbackQueryHandler(go_back, pattern="back"),
-                    CallbackQueryHandler(exit_bot, pattern="exit")],
-            TOPIC_HELP: [MessageHandler(filters.TEXT & ~filters.COMMAND, topic_help),
-                         CallbackQueryHandler(go_main, pattern="main"),
-                         CallbackQueryHandler(go_back, pattern="back"),
-                         CallbackQueryHandler(exit_bot, pattern="exit")],
-            TITLE_SELECT: [CallbackQueryHandler(select_title, pattern="^title_"),
-                           CallbackQueryHandler(go_main, pattern="main"),
-                           CallbackQueryHandler(go_back, pattern="back"),
-                           CallbackQueryHandler(exit_bot, pattern="exit")],
-            TOPIC: [CallbackQueryHandler(do_generate, pattern="go_generate"),
-                    CallbackQueryHandler(go_main, pattern="main"),
-                    CallbackQueryHandler(go_back, pattern="back"),
-                    CallbackQueryHandler(exit_bot, pattern="exit")],
+            LANG: [
+                CallbackQueryHandler(set_lang),
+                CallbackQueryHandler(go_main, pattern="main"),
+                CallbackQueryHandler(exit_bot, pattern="exit")
+            ],
+            MODE: [
+                CallbackQueryHandler(set_mode, pattern="^(research|analysis|presentation)$"),
+                CallbackQueryHandler(go_main, pattern="main"),
+                CallbackQueryHandler(go_back, pattern="back"),
+                CallbackQueryHandler(exit_bot, pattern="exit")
+            ],
+            LEVEL: [
+                CallbackQueryHandler(set_level, pattern="^level_"),
+                CallbackQueryHandler(go_main, pattern="main"),
+                CallbackQueryHandler(go_back, pattern="back"),
+                CallbackQueryHandler(exit_bot, pattern="exit")
+            ],
+            FIELD: [
+                CallbackQueryHandler(set_field, pattern="^field_"),
+                CallbackQueryHandler(go_main, pattern="main"),
+                CallbackQueryHandler(go_back, pattern="back"),
+                CallbackQueryHandler(exit_bot, pattern="exit")
+            ],
+            TOPIC_HELP: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, topic_help),
+                CallbackQueryHandler(go_main, pattern="main"),
+                CallbackQueryHandler(go_back, pattern="back"),
+                CallbackQueryHandler(exit_bot, pattern="exit")
+            ],
+            TITLE_SELECT: [
+                CallbackQueryHandler(select_title, pattern="^title_"),
+                CallbackQueryHandler(go_main, pattern="main"),
+                CallbackQueryHandler(go_back, pattern="back"),
+                CallbackQueryHandler(exit_bot, pattern="exit")
+            ],
+            TOPIC: [
+                CallbackQueryHandler(do_generate, pattern="go_generate"),
+                CallbackQueryHandler(go_main, pattern="main"),
+                CallbackQueryHandler(go_back, pattern="back"),
+                CallbackQueryHandler(exit_bot, pattern="exit")
+            ],
             FORMAT: [
                 CallbackQueryHandler(make_file, pattern="^(pdf|doc)$"),
                 CallbackQueryHandler(new_req, pattern="new"),
@@ -439,13 +453,9 @@ app.add_handler(MessageHandler(filters.ALL, auto_start), group=0)
         },
         fallbacks=[CommandHandler("start", start)]
     )
-async def auto_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if "started" not in context.user_data:
-        context.user_data["started"] = True
-        return await start(update, context)
-app.add_handler(MessageHandler(filters.ALL, start))
 
     app.add_handler(conv)
+
     print("🚀 BOT RUNNING...")
     app.run_polling(close_loop=False)
 
