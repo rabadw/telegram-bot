@@ -21,6 +21,7 @@ from bidi.algorithm import get_display
 from docx import Document
 
 # ========= CONFIG =========
+CHANNEL_URL = "https://t.me/LibyanResearchAcademy"  # ضع رابط قناتك هنا
 TOKEN = os.getenv("TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not TOKEN or not OPENAI_API_KEY:
@@ -313,17 +314,34 @@ async def do_generate(update, context):
     text = res.choices[0].message.content
     context.user_data["last"] = text
 
-    await q.message.reply_text(text[:1200])
+    # إرسال جزء من النتيجة
+await q.message.reply_text(text[:1200])
 
-    await q.message.reply_text(
-        "اختر الإجراء:",
-        reply_markup=kb([
-            [InlineKeyboardButton("📄 PDF", callback_data="pdf"),
-             InlineKeyboardButton("📝 Word", callback_data="doc")],
-            [InlineKeyboardButton("🔁 طلب جديد", callback_data="new"),
-             InlineKeyboardButton("💬 استفسار إضافي", callback_data="ask")],
-            nav_row()
-        ])
+# رسالة محفزة + زر القناة
+await q.message.reply_text(
+    "━━━━━━━━━━━━━━━\n"
+    "🔥 هذا مجرد جزء من النتيجة\n\n"
+    "📌 للحصول على:\n"
+    "• نماذج بحوث جاهزة\n"
+    "• أفكار بحث احترافية\n"
+    "• شروحات مبسطة خطوة بخطوة\n\n"
+    "🚀 طوّر مستواك الآن وابدأ بشكل صحيح",
+    reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("📢 الانضمام للقناة", url=CHANNEL_URL)]
+    ])
+)
+
+# قائمة الخيارات
+await q.message.reply_text(
+    "اختر الإجراء:",
+    reply_markup=kb([
+        [InlineKeyboardButton("📄 PDF", callback_data="pdf"),
+         InlineKeyboardButton("📝 Word", callback_data="doc")],
+        [InlineKeyboardButton("🔁 طلب جديد", callback_data="new"),
+         InlineKeyboardButton("💬 استفسار إضافي", callback_data="ask")],
+        nav_row()
+    ])
+)
     )
 
     inc_user(user_id)
