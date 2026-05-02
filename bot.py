@@ -392,9 +392,10 @@ async def new_req(update, context):
     return await start(update, context)
 
 # ========= MAIN =========def main():
+    def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # handler التشغيل التلقائي
+    # التشغيل التلقائي
     app.add_handler(MessageHandler(filters.ALL, auto_start), group=0)
 
     conv = ConversationHandler(
@@ -458,6 +459,6 @@ async def new_req(update, context):
 
     print("🚀 BOT RUNNING...")
     app.run_polling(close_loop=False)
-
+    
 if __name__ == "__main__":
     main()
