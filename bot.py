@@ -56,11 +56,11 @@ def inc_user(uid):
     conn.commit()
 
 # ========= AUTO START =========
-async def auto_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if "started" not in context.user_data:
+async def auto_start(update, context):
+    if update.message and "started" not in context.user_data:
         context.user_data["started"] = True
         return await start(update, context)
-
+        
 # ========= START =========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -148,8 +148,8 @@ async def generate(update, context):
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(MessageHandler(filters.ALL, auto_start), group=0)
-
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_start), group=0)
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
