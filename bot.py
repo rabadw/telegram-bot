@@ -390,6 +390,8 @@ async def new_req(update, context):
 # ========= MAIN =========
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
+from telegram.ext import MessageHandler, filters
+app.add_handler(MessageHandler(filters.ALL, auto_start), group=0)
 
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -433,6 +435,11 @@ def main():
         },
         fallbacks=[CommandHandler("start", start)]
     )
+async def auto_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if "started" not in context.user_data:
+        context.user_data["started"] = True
+        return await start(update, context)
+app.add_handler(MessageHandler(filters.ALL, start))
 
     app.add_handler(conv)
     print("🚀 BOT RUNNING...")
