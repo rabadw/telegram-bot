@@ -289,6 +289,7 @@ async def do_generate(update, context):
     await q.edit_message_text("⏳ جارٍ إنشاء المحتوى...")
 
     mode = context.user_data["mode"]
+
     if mode == "research":
         instruction = "اكتب خطة بحث أكاديمية مفصلة"
     elif mode == "analysis":
@@ -308,45 +309,48 @@ async def do_generate(update, context):
 
     res = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[{"role":"user","content":prompt}],
+        messages=[{"role": "user", "content": prompt}],
         max_tokens=900
     )
+
     text = res.choices[0].message.content
     context.user_data["last"] = text
 
-    # إرسال جزء من النتيجة
-await q.message.reply_text(text[:1200])
+    # إرسال النتيجة
+    await q.message.reply_text(text[:1200])
 
-# رسالة محفزة + زر القناة
-await q.message.reply_text(
-    "━━━━━━━━━━━━━━━\n"
-    "🔥 هذا مجرد جزء من النتيجة\n\n"
-    "📌 للحصول على:\n"
-    "• نماذج بحوث جاهزة\n"
-    "• أفكار بحث احترافية\n"
-    "• شروحات مبسطة خطوة بخطوة\n\n"
-    "🚀 طوّر مستواك الآن وابدأ بشكل صحيح",
-    reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("📢 الانضمام للقناة", url=CHANNEL_URL)]
-    ])
-)
+    # زر القناة
+    await q.message.reply_text(
+        "━━━━━━━━━━━━━━━\n"
+        "🔥 هذا مجرد جزء من النتيجة\n\n"
+        "📌 للحصول على:\n"
+        "• نماذج بحوث جاهزة\n"
+        "• أفكار بحث احترافية\n"
+        "• شروحات مبسطة خطوة بخطوة\n\n"
+        "🚀 طوّر مستواك الآن وابدأ بشكل صحيح",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📢 الانضمام للقناة", url=CHANNEL_URL)]
+        ])
+    )
 
-# قائمة الخيارات
-await q.message.reply_text(
-    "اختر الإجراء:",
-    reply_markup=kb([
-        [InlineKeyboardButton("📄 PDF", callback_data="pdf"),
-         InlineKeyboardButton("📝 Word", callback_data="doc")],
-        [InlineKeyboardButton("🔁 طلب جديد", callback_data="new"),
-         InlineKeyboardButton("💬 استفسار إضافي", callback_data="ask")],
-        nav_row()
-    ])
-)
+    # الخيارات
+    await q.message.reply_text(
+        "اختر الإجراء:",
+        reply_markup=kb([
+            [
+                InlineKeyboardButton("📄 PDF", callback_data="pdf"),
+                InlineKeyboardButton("📝 Word", callback_data="doc")
+            ],
+            [
+                InlineKeyboardButton("🔁 طلب جديد", callback_data="new"),
+                InlineKeyboardButton("💬 استفسار إضافي", callback_data="ask")
+            ],
+            nav_row()
+        ])
     )
 
     inc_user(user_id)
     return FORMAT
-
 # ========= FILE =========
 async def make_file(update, context):
     q = update.callback_query
