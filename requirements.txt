@@ -4,3 +4,4 @@ python-docx
 reportlab
 arabic-reshaper
 python-bidi
+python-docx
