@@ -6,6 +6,7 @@ from telegram.ext import (
     ContextTypes, ConversationHandler, MessageHandler, filters
 )
 from openai import OpenAI
+from docx import Document
 
 # ===== CONFIG =====
 TOKEN = os.getenv("TOKEN")
@@ -15,44 +16,43 @@ CHANNEL_URL = "https://t.me/YourChannelName"
 client = OpenAI(api_key=OPENAI_API_KEY)
 logging.basicConfig(level=logging.INFO)
 
-# ===== STATES =====
-MODE, LEVEL, FIELD, TOPIC = range(4)
+MODE, LEVEL, FIELD, TOPIC, FORMAT = range(5)
+
+# ===== HELPERS =====
+def split_text(text, size=3500):
+    return [text[i:i+size] for i in range(0, len(text), size)]
 
 # ===== START =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = "👋 أهلاً بك في أكاديمية الباحث الليبي\n\nاختر الخدمة 👇"
-
-    keyboard = [
-        [InlineKeyboardButton("📊 خطة بحث", callback_data="research")],
-        [InlineKeyboardButton("📈 تحليل", callback_data="analysis")],
-        [InlineKeyboardButton("🎤 عرض", callback_data="presentation")]
-    ]
-
-    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(
+        "👋 أهلاً بك في أكاديمية الباحث الليبي\n\nاختر الخدمة 👇",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("📊 خطة بحث", callback_data="research")],
+            [InlineKeyboardButton("📈 تحليل", callback_data="analysis")],
+            [InlineKeyboardButton("🎤 عرض", callback_data="presentation")]
+        ])
+    )
     return MODE
 
 # ===== MODE =====
 async def set_mode(update, context):
     q = update.callback_query
     await q.answer()
-
     context.user_data["mode"] = q.data
 
-    keyboard = [
-        [InlineKeyboardButton("ليسانس", callback_data="bachelor")],
-        [InlineKeyboardButton("دبلوم عالي", callback_data="diploma")],
-        [InlineKeyboardButton("ماجستير", callback_data="master")],
-        [InlineKeyboardButton("دكتوراه", callback_data="phd")]
-    ]
-
-    await q.edit_message_text("🎓 اختر المستوى:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await q.edit_message_text(
+        "🎓 اختر المستوى:",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("ليسانس", callback_data="bachelor")],
+            [InlineKeyboardButton("ماجستير", callback_data="master")]
+        ])
+    )
     return LEVEL
 
 # ===== LEVEL =====
 async def set_level(update, context):
     q = update.callback_query
     await q.answer()
-
     context.user_data["level"] = q.data
 
     await q.edit_message_text("📚 اكتب تخصصك:")
@@ -61,7 +61,6 @@ async def set_level(update, context):
 # ===== FIELD =====
 async def set_field(update, context):
     context.user_data["field"] = update.message.text
-
     await update.message.reply_text("✍️ اكتب موضوع البحث:")
     return TOPIC
 
@@ -69,39 +68,75 @@ async def set_field(update, context):
 async def generate(update, context):
     topic = update.message.text
 
-    await update.message.reply_text("⏳ جاري التحليل...")
+    await update.message.reply_text("⏳ جاري إنشاء البحث الكامل...")
 
     prompt = f"""
-اكتب محتوى أكاديمي احترافي:
+اكتب بحث أكاديمي كامل ومفصل جداً يتضمن:
+
+1. عنوان البحث
+2. مقدمة قوية
+3. مشكلة البحث
+4. الأهداف
+5. الأهمية
+6. المنهجية
+7. الدراسات السابقة
+8. التحليل
+9. النتائج
+10. التوصيات
+11. المراجع
+
+بأسلوب احترافي أكاديمي واضح
 
 الموضوع: {topic}
-المستوى: {context.user_data['level']}
 التخصص: {context.user_data['field']}
+المستوى: {context.user_data['level']}
 """
 
-    try:
-        res = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=700
-        )
+    res = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=2000
+    )
 
-        text = res.choices[0].message.content
+    text = res.choices[0].message.content
+    context.user_data["last"] = text
 
-    except Exception as e:
-        await update.message.reply_text("❌ خطأ في التوليد")
-        return ConversationHandler.END
+    # تقسيم النص
+    parts = split_text(text)
 
-    await update.message.reply_text(text[:1200])
+    for part in parts:
+        await update.message.reply_text(part)
 
     await update.message.reply_text(
-        "📌 تابع القناة للمزيد 👇",
+        "📌 اختر طريقة التحميل:",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("📢 القناة", url=CHANNEL_URL)]
+            [InlineKeyboardButton("📝 Word", callback_data="doc")],
+            [InlineKeyboardButton("🔁 طلب جديد", callback_data="restart")]
         ])
     )
 
-    return ConversationHandler.END
+    return FORMAT
+
+# ===== FILE =====
+async def file_action(update, context):
+    q = update.callback_query
+    await q.answer()
+
+    doc = Document()
+    doc.add_paragraph(context.user_data["last"])
+
+    file_path = "research.docx"
+    doc.save(file_path)
+
+    await q.message.reply_document(document=open(file_path, "rb"))
+
+    return FORMAT
+
+# ===== RESTART =====
+async def restart(update, context):
+    q = update.callback_query
+    await q.answer()
+    return await start(update, context)
 
 # ===== MAIN =====
 def main():
@@ -114,13 +149,17 @@ def main():
             LEVEL: [CallbackQueryHandler(set_level)],
             FIELD: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_field)],
             TOPIC: [MessageHandler(filters.TEXT & ~filters.COMMAND, generate)],
+            FORMAT: [
+                CallbackQueryHandler(file_action, pattern="doc"),
+                CallbackQueryHandler(restart, pattern="restart")
+            ],
         },
         fallbacks=[CommandHandler("start", start)],
     )
 
     app.add_handler(conv)
 
-    print("🚀 BOT WORKING...")
+    print("🚀 BOT READY")
     app.run_polling()
 
 if __name__ == "__main__":
