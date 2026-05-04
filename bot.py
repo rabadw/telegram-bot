@@ -8,106 +8,114 @@ from telegram.ext import (
 from openai import OpenAI
 from docx import Document
 
-# ========= CONFIG =========
+# ===== CONFIG =====
 TOKEN = os.getenv("TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-CHANNEL_URL = "https://t.me/YourChannelName"
-
 client = OpenAI(api_key=OPENAI_API_KEY)
+
 logging.basicConfig(level=logging.INFO)
 
-# ========= STATES =========
+# ===== STATES =====
 LANG, MODE, LEVEL, FIELD, TOPIC, FORMAT = range(6)
 
-# ========= HELPERS =========
-def split_text(text, size=3500):
-    return [text[i:i+size] for i in range(0, len(text), size)]
+# ===== LANGUAGE SYSTEM =====
+def t(context, ar, en):
+    return en if context.user_data.get("lang") == "en" else ar
 
+# ===== MENUS =====
 def lang_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🇱🇾 العربية", callback_data="lang_ar"),
          InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")]
     ])
 
-def main_menu():
+def main_menu(context):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📊 خطة بحث", callback_data="mode_research")],
-        [InlineKeyboardButton("📈 تحليل", callback_data="mode_analysis")],
-        [InlineKeyboardButton("🎤 عرض تقديمي", callback_data="mode_presentation")]
+        [InlineKeyboardButton(t(context,"📊 خطة بحث","📊 Research Plan"), callback_data="mode_research")],
+        [InlineKeyboardButton(t(context,"📈 تحليل","📈 Analysis"), callback_data="mode_analysis")],
+        [InlineKeyboardButton(t(context,"🎤 عرض تقديمي","🎤 Presentation"), callback_data="mode_presentation")]
     ])
 
-def level_menu():
+def level_menu(context):
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("ليسانس", callback_data="level_bachelor"),
-            InlineKeyboardButton("دبلوم عالي", callback_data="level_diploma")
+            InlineKeyboardButton(t(context,"ليسانس","Bachelor"), callback_data="level_bachelor"),
+            InlineKeyboardButton(t(context,"دبلوم عالي","Diploma"), callback_data="level_diploma")
         ],
         [
-            InlineKeyboardButton("ماجستير", callback_data="level_master"),
-            InlineKeyboardButton("دكتوراه", callback_data="level_phd")
+            InlineKeyboardButton(t(context,"ماجستير","Master"), callback_data="level_master"),
+            InlineKeyboardButton(t(context,"دكتوراه","PhD"), callback_data="level_phd")
         ],
-        [InlineKeyboardButton("🏠 الرئيسية", callback_data="main")]
+        [InlineKeyboardButton(t(context,"🏠 الرئيسية","🏠 Main Menu"), callback_data="main")]
     ])
 
-def nav_menu():
+def nav_menu(context):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 رجوع", callback_data="back"),
-         InlineKeyboardButton("🏠 الرئيسية", callback_data="main")]
+        [
+            InlineKeyboardButton(t(context,"🔙 رجوع","🔙 Back"), callback_data="back"),
+            InlineKeyboardButton(t(context,"🏠 الرئيسية","🏠 Main"), callback_data="main")
+        ]
     ])
 
-# ========= START =========
+# ===== HELPERS =====
+def split_text(text, size=3500):
+    return [text[i:i+size] for i in range(0, len(text), size)]
+
+# ===== START =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    if update.message:
-        await update.message.reply_text(
-            "👋 أهلاً بك في أكاديمية الباحث الليبي\n\nاختر اللغة:",
-            reply_markup=lang_menu()
-        )
-    else:
-        await update.callback_query.edit_message_text(
-            "👋 أهلاً بك في أكاديمية الباحث الليبي\n\nاختر اللغة:",
-            reply_markup=lang_menu()
-        )
+    context.user_data["lang"] = "ar"  # افتراضي عربي
+
+    await update.message.reply_text(
+        "👋 أهلاً بك في أكاديمية الباحث الليبي\nاختر اللغة:",
+        reply_markup=lang_menu()
+    )
     return LANG
 
-# ========= AUTO ENTRY =========
+# ===== AUTO ENTRY =====
 async def auto_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # بدء تلقائي
     if not context.user_data:
         return await start(update, context)
 
-    # إدخال تخصص
     if context.user_data.get("await") == "field":
         context.user_data["field"] = update.message.text
         context.user_data["await"] = "topic"
-        await update.message.reply_text("✍️ اكتب موضوع البحث:", reply_markup=nav_menu())
+        await update.message.reply_text(
+            t(context,"✍️ اكتب موضوع البحث:","✍️ Enter research topic:"),
+            reply_markup=nav_menu(context)
+        )
         return TOPIC
 
-    # إدخال موضوع
     if context.user_data.get("await") == "topic":
         return await generate(update, context)
 
-    return
-
-# ========= LANGUAGE =========
+# ===== LANGUAGE =====
 async def set_lang(update, context):
     q = update.callback_query
     await q.answer()
 
-    context.user_data["lang"] = q.data
-    await q.edit_message_text("📌 اختر الخدمة:", reply_markup=main_menu())
+    context.user_data["lang"] = "en" if "en" in q.data else "ar"
+
+    await q.edit_message_text(
+        t(context,"اختر الخدمة:","Choose service:"),
+        reply_markup=main_menu(context)
+    )
     return MODE
 
-# ========= MODE =========
+# ===== MODE =====
 async def set_mode(update, context):
     q = update.callback_query
     await q.answer()
 
     context.user_data["mode"] = q.data
-    await q.edit_message_text("🎓 اختر المستوى:", reply_markup=level_menu())
+
+    await q.edit_message_text(
+        t(context,"🎓 اختر المستوى:","🎓 Choose level:"),
+        reply_markup=level_menu(context)
+    )
     return LEVEL
 
-# ========= LEVEL =========
+# ===== LEVEL =====
 async def set_level(update, context):
     q = update.callback_query
     await q.answer()
@@ -115,93 +123,73 @@ async def set_level(update, context):
     context.user_data["level"] = q.data
     context.user_data["await"] = "field"
 
-    await q.edit_message_text("📚 اكتب تخصصك:", reply_markup=nav_menu())
+    await q.edit_message_text(
+        t(context,"📚 اكتب تخصصك:","📚 Enter your field:"),
+        reply_markup=nav_menu(context)
+    )
     return FIELD
 
-# ========= GENERATE =========
+# ===== GENERATE =====
 async def generate(update, context):
     topic = update.message.text
-    context.user_data["topic"] = topic
 
-    await update.message.reply_text("⏳ جاري إعداد البحث...")
+    await update.message.reply_text(
+        t(context,"⏳ جاري المعالجة...","⏳ Processing...")
+    )
+
+    lang_prompt = "Arabic" if context.user_data["lang"] == "ar" else "English"
 
     prompt = f"""
-اكتب محتوى أكاديمي احترافي كامل يشمل:
-- عنوان
-- مقدمة
-- مشكلة البحث
-- الأهداف
-- الأهمية
-- المنهجية
-- التحليل
-- النتائج
-- التوصيات
-- المراجع
+Write a full academic research in {lang_prompt} including:
+title, introduction, problem, objectives, methodology, analysis, results, recommendations, references.
 
-الموضوع: {topic}
-التخصص: {context.user_data.get('field')}
-المستوى: {context.user_data.get('level')}
-النوع: {context.user_data.get('mode')}
+Topic: {topic}
+Field: {context.user_data['field']}
+Level: {context.user_data['level']}
 """
 
-    try:
-        res = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=2500
-        )
-        text = res.choices[0].message.content
-        context.user_data["last"] = text
-    except Exception:
-        await update.message.reply_text("❌ حدث خطأ، حاول مرة أخرى")
-        return ConversationHandler.END
+    res = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role":"user","content":prompt}],
+        max_tokens=2500
+    )
+
+    text = res.choices[0].message.content
+    context.user_data["last"] = text
 
     for part in split_text(text):
         await update.message.reply_text(part)
 
     await update.message.reply_text(
-        "📌 اختر التالي:",
+        t(context,"📌 اختر التالي:","📌 Next:"),
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("📝 تحميل Word", callback_data="doc")],
-            [InlineKeyboardButton("🔁 طلب جديد", callback_data="main")]
+            [InlineKeyboardButton("📝 Word", callback_data="doc")],
+            [InlineKeyboardButton(t(context,"🔁 جديد","🔁 New"), callback_data="main")]
         ])
     )
 
     return FORMAT
 
-# ========= FILE =========
+# ===== FILE =====
 async def file_action(update, context):
     q = update.callback_query
     await q.answer()
 
     doc = Document()
-    doc.add_paragraph(context.user_data.get("last", "لا يوجد محتوى"))
+    doc.add_paragraph(context.user_data["last"])
     doc.save("research.docx")
 
-    await q.message.reply_document(open("research.docx", "rb"))
-
-    await q.message.reply_text(
-        "🚀 تابع القناة للمزيد 👇",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("📢 القناة", url=CHANNEL_URL)]
-        ])
-    )
+    await q.message.reply_document(open("research.docx","rb"))
 
     return FORMAT
 
-# ========= NAVIGATION =========
+# ===== NAV =====
 async def go_main(update, context):
     q = update.callback_query
     await q.answer()
     return await start(update, context)
 
-async def go_back(update, context):
-    q = update.callback_query
-    await q.answer()
-    await q.edit_message_text("🎓 اختر المستوى:", reply_markup=level_menu())
-    return LEVEL
-
-# ========= MAIN =========
+# ===== MAIN =====
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
@@ -213,10 +201,7 @@ def main():
         states={
             LANG: [CallbackQueryHandler(set_lang)],
             MODE: [CallbackQueryHandler(set_mode)],
-            LEVEL: [
-                CallbackQueryHandler(set_level),
-                CallbackQueryHandler(go_main, pattern="main")
-            ],
+            LEVEL: [CallbackQueryHandler(set_level), CallbackQueryHandler(go_main, pattern="main")],
             FIELD: [MessageHandler(filters.TEXT & ~filters.COMMAND, auto_entry)],
             TOPIC: [MessageHandler(filters.TEXT & ~filters.COMMAND, auto_entry)],
             FORMAT: [
@@ -228,7 +213,6 @@ def main():
     )
 
     app.add_handler(conv)
-
     print("🚀 BOT READY")
     app.run_polling()
 
