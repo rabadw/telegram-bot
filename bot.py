@@ -8,7 +8,7 @@ from telegram.ext import (
 from openai import OpenAI
 from docx import Document
 
-# ===== CONFIG =====
+# ========= CONFIG =========
 TOKEN = os.getenv("TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 CHANNEL_URL = "https://t.me/YourChannelName"
@@ -16,14 +16,13 @@ CHANNEL_URL = "https://t.me/YourChannelName"
 client = OpenAI(api_key=OPENAI_API_KEY)
 logging.basicConfig(level=logging.INFO)
 
-# ===== STATES =====
+# ========= STATES =========
 LANG, MODE, LEVEL, FIELD, TOPIC, FORMAT = range(6)
 
-# ===== HELPERS =====
+# ========= HELPERS =========
 def split_text(text, size=3500):
     return [text[i:i+size] for i in range(0, len(text), size)]
 
-# ===== MENUS =====
 def lang_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🇱🇾 العربية", callback_data="lang_ar"),
@@ -39,9 +38,14 @@ def main_menu():
 
 def level_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("ليسانس", callback_data="level_bachelor")],
-        [InlineKeyboardButton("ماجستير", callback_data="level_master")],
-        [InlineKeyboardButton("دكتوراه", callback_data="level_phd")],
+        [
+            InlineKeyboardButton("ليسانس", callback_data="level_bachelor"),
+            InlineKeyboardButton("دبلوم عالي", callback_data="level_diploma")
+        ],
+        [
+            InlineKeyboardButton("ماجستير", callback_data="level_master"),
+            InlineKeyboardButton("دكتوراه", callback_data="level_phd")
+        ],
         [InlineKeyboardButton("🏠 الرئيسية", callback_data="main")]
     ])
 
@@ -51,59 +55,70 @@ def nav_menu():
          InlineKeyboardButton("🏠 الرئيسية", callback_data="main")]
     ])
 
-# ===== START =====
+# ========= START =========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-
-    await update.message.reply_text(
-        "👋 أهلاً بك في أكاديمية الباحث الليبي\n\nاختر اللغة:",
-        reply_markup=lang_menu()
-    )
+    if update.message:
+        await update.message.reply_text(
+            "👋 أهلاً بك في أكاديمية الباحث الليبي\n\nاختر اللغة:",
+            reply_markup=lang_menu()
+        )
+    else:
+        await update.callback_query.edit_message_text(
+            "👋 أهلاً بك في أكاديمية الباحث الليبي\n\nاختر اللغة:",
+            reply_markup=lang_menu()
+        )
     return LANG
 
-# ===== AUTO ENTRY =====
+# ========= AUTO ENTRY =========
 async def auto_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # بدء تلقائي
     if not context.user_data:
         return await start(update, context)
 
-    if "field" not in context.user_data:
+    # إدخال تخصص
+    if context.user_data.get("await") == "field":
         context.user_data["field"] = update.message.text
+        context.user_data["await"] = "topic"
         await update.message.reply_text("✍️ اكتب موضوع البحث:", reply_markup=nav_menu())
         return TOPIC
 
-    return await generate(update, context)
+    # إدخال موضوع
+    if context.user_data.get("await") == "topic":
+        return await generate(update, context)
 
-# ===== LANGUAGE =====
+    return
+
+# ========= LANGUAGE =========
 async def set_lang(update, context):
     q = update.callback_query
     await q.answer()
 
     context.user_data["lang"] = q.data
-
-    await q.edit_message_text("اختر الخدمة:", reply_markup=main_menu())
+    await q.edit_message_text("📌 اختر الخدمة:", reply_markup=main_menu())
     return MODE
 
-# ===== MODE =====
+# ========= MODE =========
 async def set_mode(update, context):
     q = update.callback_query
     await q.answer()
 
     context.user_data["mode"] = q.data
-
     await q.edit_message_text("🎓 اختر المستوى:", reply_markup=level_menu())
     return LEVEL
 
-# ===== LEVEL =====
+# ========= LEVEL =========
 async def set_level(update, context):
     q = update.callback_query
     await q.answer()
 
     context.user_data["level"] = q.data
+    context.user_data["await"] = "field"
 
     await q.edit_message_text("📚 اكتب تخصصك:", reply_markup=nav_menu())
     return FIELD
 
-# ===== GENERATE =====
+# ========= GENERATE =========
 async def generate(update, context):
     topic = update.message.text
     context.user_data["topic"] = topic
@@ -111,12 +126,22 @@ async def generate(update, context):
     await update.message.reply_text("⏳ جاري إعداد البحث...")
 
     prompt = f"""
-اكتب بحث أكاديمي احترافي كامل يتضمن:
-عنوان + مقدمة + مشكلة + أهداف + أهمية + منهجية + تحليل + نتائج + توصيات + مراجع
+اكتب محتوى أكاديمي احترافي كامل يشمل:
+- عنوان
+- مقدمة
+- مشكلة البحث
+- الأهداف
+- الأهمية
+- المنهجية
+- التحليل
+- النتائج
+- التوصيات
+- المراجع
 
 الموضوع: {topic}
-التخصص: {context.user_data['field']}
-المستوى: {context.user_data['level']}
+التخصص: {context.user_data.get('field')}
+المستوى: {context.user_data.get('level')}
+النوع: {context.user_data.get('mode')}
 """
 
     try:
@@ -127,7 +152,6 @@ async def generate(update, context):
         )
         text = res.choices[0].message.content
         context.user_data["last"] = text
-
     except Exception:
         await update.message.reply_text("❌ حدث خطأ، حاول مرة أخرى")
         return ConversationHandler.END
@@ -145,7 +169,7 @@ async def generate(update, context):
 
     return FORMAT
 
-# ===== FILE =====
+# ========= FILE =========
 async def file_action(update, context):
     q = update.callback_query
     await q.answer()
@@ -157,7 +181,7 @@ async def file_action(update, context):
     await q.message.reply_document(open("research.docx", "rb"))
 
     await q.message.reply_text(
-        "🚀 للمزيد من النماذج الاحترافية:\nانضم للقناة 👇",
+        "🚀 تابع القناة للمزيد 👇",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("📢 القناة", url=CHANNEL_URL)]
         ])
@@ -165,7 +189,7 @@ async def file_action(update, context):
 
     return FORMAT
 
-# ===== NAVIGATION =====
+# ========= NAVIGATION =========
 async def go_main(update, context):
     q = update.callback_query
     await q.answer()
@@ -174,11 +198,10 @@ async def go_main(update, context):
 async def go_back(update, context):
     q = update.callback_query
     await q.answer()
-
     await q.edit_message_text("🎓 اختر المستوى:", reply_markup=level_menu())
     return LEVEL
 
-# ===== MAIN =====
+# ========= MAIN =========
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
@@ -190,9 +213,12 @@ def main():
         states={
             LANG: [CallbackQueryHandler(set_lang)],
             MODE: [CallbackQueryHandler(set_mode)],
-            LEVEL: [CallbackQueryHandler(set_level), CallbackQueryHandler(go_main, pattern="main")],
+            LEVEL: [
+                CallbackQueryHandler(set_level),
+                CallbackQueryHandler(go_main, pattern="main")
+            ],
             FIELD: [MessageHandler(filters.TEXT & ~filters.COMMAND, auto_entry)],
-            TOPIC: [MessageHandler(filters.TEXT & ~filters.COMMAND, generate)],
+            TOPIC: [MessageHandler(filters.TEXT & ~filters.COMMAND, auto_entry)],
             FORMAT: [
                 CallbackQueryHandler(file_action, pattern="doc"),
                 CallbackQueryHandler(go_main, pattern="main")
@@ -203,7 +229,7 @@ def main():
 
     app.add_handler(conv)
 
-    print("🚀 BOT READY & STABLE")
+    print("🚀 BOT READY")
     app.run_polling()
 
 if __name__ == "__main__":
